@@ -23,7 +23,7 @@ public class FileUploaderBot {
     private final TelegramBot bot;
     private final DriveService driveService;
     private final SessionManager sessionManager;
-    private final String TokenID = "XXXXXXX";//Replace this
+    private final String TokenID = "XXX";//Replace this
 
     public FileUploaderBot(DriveService driveService, SessionManager sessionManager) {
         this.bot = new TelegramBot(TokenID);
@@ -53,25 +53,12 @@ public class FileUploaderBot {
             try {
                 session = sessionManager.createSession(chatId);
 
-                // Fetch top-level folders
-                List<Folder> roots = driveService.scanTopLevelFolders();
-                session.setRootFolders(roots);
-
-                // Build keyboard
-                InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
-                for (Folder root : roots) {
-                    keyboard.addRow(new InlineKeyboardButton("📂 " + root.getName())
-                            .callbackData("folder:" + root.getId()));
-                }
-                keyboard.addRow(new InlineKeyboardButton("⬆ Upload Here").callbackData("upload"));
-
-                // Send message WITH keyboard
-                bot.execute(new SendMessage(chatId, "📂 Welcome! Select a folder:")
-                        .replyMarkup(keyboard));
+                //welcome message
+                sendWelcomeMessage(chatId);
 
                 // Debug for folders
-                System.out.println("Loaded top-level folders: " + roots.size());
-                for (Folder f : roots) {
+                System.out.println("Loaded top-level folders: " + driveService.scanTopLevelFolders().size());
+                for (Folder f : driveService.scanTopLevelFolders()) {
                     System.out.println("📂 " + f.getName() + " (" + f.getId() + ")");
                 }
 
@@ -127,6 +114,9 @@ public class FileUploaderBot {
                                 " | Reason: " + response.description());
                     }
 
+                    session.setCurrentFolder(null);
+                    sendWelcomeMessage(chatId);
+
 
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -177,8 +167,43 @@ public class FileUploaderBot {
                     InlineKeyboardMarkup kb = buildFolderKeyboard(parent);
                     bot.execute(new EditMessageText(chatId, callback.message().messageId(),
                             "📂 Folder: " + parent.getName()).replyMarkup(kb));
-                }
+                }else{
+                    session.setCurrentFolder(null);
+                    InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
+
+                    try {
+                        // Refresh root folders and store in the session
+                        List<Folder> roots = driveService.scanTopLevelFolders();
+                        if (session != null) {
+                            session.setRootFolders(roots);
+                        }
+
+                        // Add all top-level folders as buttons
+                        for (Folder folder : roots) {
+                            keyboard.addRow(new InlineKeyboardButton("📂 " + folder.getName())
+                                    .callbackData("folder:" + folder.getId()));
+                        }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                    // Add "Finish Session" option
+                    keyboard.addRow(new InlineKeyboardButton("❌ Finish Session").callbackData("finish"));
+
+                    bot.execute(new EditMessageText(chatId, callback.message().messageId(),
+                            "📂 Folder: ").replyMarkup(keyboard));
+
+                }//one of the top-folders
             }
+            else if ("finish".equals(data)) {
+                // Clear session
+                sessionManager.removeSession(chatId);
+
+                // Send goodbye message
+                bot.execute(new SendMessage(chatId,
+                        "✅ Your session has been closed. You can start again anytime by sending /start."));
+            }
+
         } catch (Exception e) {
             bot.execute(new SendMessage(chatId, "❌ Error: " + e.getMessage()));
         }
@@ -202,7 +227,7 @@ public class FileUploaderBot {
         kb.addRow(new InlineKeyboardButton("⬆ Upload Here").callbackData("upload"));
 
         // ✅ Back button (only if not at root)
-        if (folder.getParent() != null) {
+        if (folder.getParent() != null || folder.getSubFolders() != null) {
             kb.addRow(new InlineKeyboardButton("🔙 Back").callbackData("back"));
         }
 
@@ -228,4 +253,34 @@ public class FileUploaderBot {
         }
         return temp;
     }
+
+
+    private void sendWelcomeMessage(Long chatId) {
+        InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
+
+        try {
+            // Refresh root folders and store in the session
+            List<Folder> roots = driveService.scanTopLevelFolders();
+            UserSession session = sessionManager.getSession(chatId);
+            if (session != null) {
+                session.setRootFolders(roots);
+            }
+
+            // Add all top-level folders as buttons
+            for (Folder folder : roots) {
+                keyboard.addRow(new InlineKeyboardButton("📂 " + folder.getName())
+                        .callbackData("folder:" + folder.getId()));
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        // Add "Finish Session" option
+        keyboard.addRow(new InlineKeyboardButton("❌ Finish Session").callbackData("finish"));
+
+        bot.execute(new SendMessage(chatId, "📂 Please choose a folder or finish your session:")
+                .replyMarkup(keyboard));
+    }
+
+
 }
