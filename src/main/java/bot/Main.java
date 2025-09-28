@@ -3,6 +3,7 @@ package bot;
 import service.DriveService;
 import session.SessionCleanupTask;
 import session.SessionManager;
+import security.SecurityStore;
 
 public class Main {
     public static void main(String[] args) {
@@ -16,8 +17,11 @@ public class Main {
             // Start background session cleanup task
             SessionCleanupTask.start(sessionManager);
 
+            //Initializing securityStore
+            SecurityStore securityStore = new SecurityStore();
+
             // Start Telegram bot
-            FileUploaderBot bot = new FileUploaderBot(driveService, sessionManager);
+            FileUploaderBot bot = new FileUploaderBot(driveService, sessionManager, securityStore);
             bot.start();
 
             System.out.println("✅ Telegram Drive Bot is running...");
